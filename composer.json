@@ -1,0 +1,20 @@
+{
+    "name": "yabx-net/mysql",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Yabx\\MySQL\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Yauheni Kiryienkau",
+            "email": "ya@redstream.by"
+        }
+    ],
+    "require": {
+        "php": "^8.1",
+        "ext-mysqli": "*"
+    }
+}
