@@ -36,14 +36,14 @@ class Connection {
     }
 
     public function insert(string $table, array $data, bool $igrnore = false): int|string {
-        $query = 'INSERT' . ($igrnore? ' IGNORE' : '') .  ' INTO ' . $this->escapeId($table) . ' ';
-        $query .= $this->escapeId(array_keys($data)) . ' VALUES ' . $this->escape(array_values($data));
+        $query = 'INSERT' . ($igrnore? ' IGNORE' : '') .  ' INTO ' . $this->escapeId($table) . ' (';
+        $query .= $this->escapeId(array_keys($data)) . ') VALUES ' . $this->escape(array_values($data));
         $this->exec($query);
         return $this->driver->insert_id;
     }
 
-    public function select(string $table, array $where = [], array $order = [], ?int $limit = null, string $fields = '*'): array {
-        $query = 'SELECT ' . $fields . ' FROM ' . $this->escapeId($table);
+    public function select(string $table, array $where = [], array $order = [], ?int $limit = null, array $fields = ['*']): array {
+        $query = 'SELECT ' . $this->escapeId($fields) . ' FROM ' . $this->escapeId($table);
         if($where) $query .= ' ' . $this->where($where);
         if($order) {
             $query .= ' ORDER BY ';
@@ -100,8 +100,8 @@ class Connection {
     private function prepare(string $query, array $params = []): string {
         foreach($params as $key => $value) {
             $query = str_replace('{$' . $key . '}', $this->escape($value), $query);
-//            $query = str_replace('{&' . $key . '}', $this->escapeId($value), $query);
-//            $query = str_replace('{#' . $key . '}', $value, $query);
+            $query = str_replace('{&' . $key . '}', $this->escapeId($value), $query);
+            $query = str_replace('{#' . $key . '}', $value, $query);
         }
         echo $query . PHP_EOL;
         return $query;
@@ -121,8 +121,20 @@ class Connection {
 
     private function escapeId(mixed $id): string {
         if($id === '*') return $id;
-        elseif(is_string($id)) return '`' . $id . '`';
-        elseif(is_array($id)) return '(' . implode(', ', array_map(fn(mixed $v) => $this->escapeId($v), $id)) . ')';
+        elseif(is_string($id)) {
+            return str_replace(['.', '`*`'], ['`.`', '*'], '`' . $id . '`');
+        }
+        elseif(is_array($id)) {
+            $keys = [];
+            foreach($id as $arg1 => $arg2) {
+                if(is_numeric($arg1)) {
+                    $keys[] = $this->escapeId($arg2);
+                } else {
+                    $keys[] = $this->escapeId($arg1) . ' AS ' . $this->escapeId($arg2);
+                }
+            }
+            return implode(', ', $keys);
+        }
         else throw new Exception('Invalid id type: ' . gettype($id));
     }
 
