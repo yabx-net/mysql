@@ -7,11 +7,13 @@ use Exception;
 use mysqli_result;
 use DateTimeInterface;
 use mysqli_sql_exception;
+use Psr\Log\LoggerInterface;
 use Yabx\MySQL\Exceptions\QueryException;
 use Yabx\MySQL\Exceptions\DuplicateEntryException;
 
 class Connection {
 
+    protected ?LoggerInterface $logger;
     private mysqli $driver;
     private static array $pool = [];
 
@@ -21,18 +23,25 @@ class Connection {
         return $connection;
     }
 
-    public function __construct(string $hostname, string $username, string $password, string $database, int $port = 3306, string $charset = 'utf8mb4') {
+    public function __construct(string $hostname, string $username, string $password, string $database, int $port = 3306,
+                                string $charset = 'utf8mb4', ?LoggerInterface $logger = null) {
         $this->driver = new mysqli($hostname, $username, $password, $database, $port);
+        $this->driver->set_opt(MYSQLI_OPT_INT_AND_FLOAT_NATIVE, true);
         if(!$this->driver->select_db($database))
             throw new Exception('Failed to set database: ' . $database);
         if(!$this->driver->set_charset($charset))
             throw new Exception('Failed to set charset: ' . $charset);
         self::$pool[] = $this;
+        $this->logger = $logger;
     }
 
     public function query(string $query, array $params = []): array {
-        $result = $this->exec($query, $params);
-        return $result->fetch_assoc();
+        return $this->exec($query, $params)->fetch_all(MYSQLI_ASSOC);
+    }
+
+    public function queryOne(string $query, array $params = []): array|null {
+        if(!str_ends_with($query, 'LIMIT 1')) $query .= ' LIMIT 1';
+        return $this->query($query, $params)[0] ?? null;
     }
 
     public function insert(string $table, array $data, bool $igrnore = false): int|string {
@@ -55,6 +64,10 @@ class Connection {
         }
         if($limit) $query .= ' LIMIT ' . $limit;
         return $this->query($query);
+    }
+
+    public function selectOne(string $table, array $where = [], array $order = [], array $fields = ['*']): ?array {
+        return $this->select($table, $where, $order, 1, $fields)[0] ?? null;
     }
 
     public function update(string $table, array $data, array $where): int {
@@ -88,10 +101,13 @@ class Connection {
     }
 
     private function exec(string $query, array $params = []): mysqli_result|bool {
+        $this->logger?->debug($query, $params);
         $query = $this->prepare($query, $params);
+        //echo "{$query}\n\n";
         try {
             return $this->driver->query($query);
         } catch(mysqli_sql_exception $e) {
+            $this->logger?->error($e->getMessage());
             if($e->getCode() === 1062) throw new DuplicateEntryException($e->getMessage(), $query);
             throw new QueryException($e->getMessage(), $e->getCode(), $query);
         }
@@ -103,7 +119,6 @@ class Connection {
             $query = str_replace('{&' . $key . '}', $this->escapeId($value), $query);
             $query = str_replace('{#' . $key . '}', $value, $query);
         }
-        echo $query . PHP_EOL;
         return $query;
     }
 
@@ -150,6 +165,10 @@ class Connection {
         }
         $query .= implode(' AND ', $conditions);
         return $query;
+    }
+
+    public function getDriver(): mysqli {
+        return $this->driver;
     }
 
 }
